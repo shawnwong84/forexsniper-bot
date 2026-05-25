@@ -1,35 +1,226 @@
-name: ForexSniper Liquidity Tracker
+"""
+ForexSniper Liquidity Tracker v2
+Uses APIs that work from GitHub Actions:
+- Bitfinex (funding rates, order book)
+- CoinGecko (price, volume, market data)
+- CryptoCompare (additional sentiment)
+"""
+import requests
+import json
+import datetime
+import os
 
-on:
-  schedule:
-    - cron: '*/15 * * * *'
-  workflow_dispatch:
+# ─────────────────────────────────────────────────────────
+# BITFINEX — Funding rates work great from GitHub
+# ─────────────────────────────────────────────────────────
+def get_bitfinex_funding(symbol='fUSD'):
+    """Bitfinex funding stats - shows long/short positioning"""
+    try:
+        r = requests.get(
+            f'https://api-pub.bitfinex.com/v2/calc/trade/avg',
+            params={'symbol': f't{symbol}', 'amount': '1000'},
+            timeout=10)
+        if r.status_code == 200:
+            return r.json()
+    except Exception as e:
+        print(f"Bitfinex error: {e}")
+    return None
 
-permissions:
-  contents: write
+def get_bitfinex_book(symbol='tBTCUSD'):
+    """Bitfinex order book imbalance"""
+    try:
+        r = requests.get(
+            f'https://api-pub.bitfinex.com/v2/book/{symbol}/P0',
+            params={'len': '25'}, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            bid_vol = sum(abs(x[2]) for x in data if x[2] > 0)
+            ask_vol = sum(abs(x[2]) for x in data if x[2] < 0)
+            total = bid_vol + ask_vol
+            if total == 0: return 0, 0, 0
+            bp = bid_vol / total * 100
+            return bp, 100 - bp, bp - (100 - bp)
+    except Exception as e:
+        print(f"Bitfinex book error: {e}")
+    return 0, 0, 0
 
-jobs:
-  update-liquidity-data:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+def get_bitfinex_ticker(symbol='tBTCUSD'):
+    """Bitfinex ticker for price and 24h volume"""
+    try:
+        r = requests.get(f'https://api-pub.bitfinex.com/v2/ticker/{symbol}', timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            return {
+                'price': data[6],
+                'daily_change_pct': data[5] * 100,
+                'volume': data[7],
+                'high': data[8],
+                'low': data[9]
+            }
+    except Exception as e:
+        print(f"Ticker error: {e}")
+    return {}
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+# ─────────────────────────────────────────────────────────
+# COINGECKO — Reliable from anywhere
+# ─────────────────────────────────────────────────────────
+def get_coingecko_data(coin_id):
+    """CoinGecko market data - very reliable"""
+    try:
+        r = requests.get(
+            f'https://api.coingecko.com/api/v3/coins/{coin_id}',
+            params={'localization': 'false', 'tickers': 'false',
+                    'market_data': 'true', 'community_data': 'true',
+                    'developer_data': 'false'},
+            timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            md = data.get('market_data', {})
+            sentiment_up   = data.get('sentiment_votes_up_percentage',   0)
+            sentiment_down = data.get('sentiment_votes_down_percentage', 0)
+            return {
+                'price': md.get('current_price', {}).get('usd', 0),
+                'change_24h':  md.get('price_change_percentage_24h',  0),
+                'change_7d':   md.get('price_change_percentage_7d',   0),
+                'change_30d':  md.get('price_change_percentage_30d',  0),
+                'volume_24h':  md.get('total_volume', {}).get('usd', 0),
+                'market_cap':  md.get('market_cap',   {}).get('usd', 0),
+                'sentiment_up': sentiment_up,
+                'sentiment_down': sentiment_down,
+                'ath_change_pct': md.get('ath_change_percentage', {}).get('usd', 0),
+                'atl_change_pct': md.get('atl_change_percentage', {}).get('usd', 0)
+            }
+    except Exception as e:
+        print(f"CoinGecko error: {e}")
+    return {}
 
-      - name: Install dependencies
-        run: pip install requests
+# ─────────────────────────────────────────────────────────
+# ALTERNATIVE.ME — Fear & Greed (always works)
+# ─────────────────────────────────────────────────────────
+def get_fear_greed():
+    try:
+        r = requests.get('https://api.alternative.me/fng/?limit=2', timeout=10)
+        if r.status_code == 200:
+            data = r.json()['data']
+            cur = int(data[0]['value'])
+            yest = int(data[1]['value']) if len(data) > 1 else cur
+            return cur, yest, data[0]['value_classification']
+    except Exception as e:
+        print(f"F&G error: {e}")
+    return 50, 50, 'Neutral'
 
-      - name: Run Liquidity Tracker
-        run: python .github/scripts/liquidity_tracker.py
+# ─────────────────────────────────────────────────────────
+# SCORING
+# ─────────────────────────────────────────────────────────
+def calculate(coin_id, bitfinex_pair):
+    score = 0
+    details = {}
 
-      - name: Commit and push data
-        run: |
-          git config --global user.name "ForexSniper Bot"
-          git config --global user.email "bot@forexsniper.local"
-          git add docs/liquidity_data.json
-          git diff --staged --quiet || git commit -m "Update liquidity data"
-          git push
+    # CoinGecko market data
+    cg = get_coingecko_data(coin_id)
+    if cg:
+        details['price']         = cg.get('price', 0)
+        details['change_24h']    = round(cg.get('change_24h',  0), 2)
+        details['change_7d']     = round(cg.get('change_7d',   0), 2)
+        details['volume_24h']    = cg.get('volume_24h', 0)
+        details['sentiment_up']  = cg.get('sentiment_up', 0)
+        details['ath_change']    = round(cg.get('ath_change_pct', 0), 2)
+
+        # Recent momentum
+        c24 = cg.get('change_24h', 0)
+        if   c24 >  5: score += 20
+        elif c24 >  2: score += 10
+        elif c24 < -5: score -= 20
+        elif c24 < -2: score -= 10
+
+        # Weekly trend
+        c7 = cg.get('change_7d', 0)
+        if   c7 >  10: score += 15
+        elif c7 >   5: score += 8
+        elif c7 < -10: score -= 15
+        elif c7 <  -5: score -= 8
+
+        # Community sentiment
+        sup = cg.get('sentiment_up', 50)
+        if   sup > 70: score += 10
+        elif sup > 60: score += 5
+        elif sup < 30: score -= 10
+        elif sup < 40: score -= 5
+
+    # Bitfinex order book
+    bid, ask, imb = get_bitfinex_book(bitfinex_pair)
+    details['bid_pct']   = round(bid, 2)
+    details['ask_pct']   = round(ask, 2)
+    details['imbalance'] = round(imb, 2)
+    if   imb >  15: score += 20
+    elif imb >   5: score += 10
+    elif imb < -15: score -= 20
+    elif imb <  -5: score -= 10
+
+    # Bitfinex ticker
+    tick = get_bitfinex_ticker(bitfinex_pair)
+    if tick:
+        details['bitfinex_price']      = tick.get('price', 0)
+        details['bitfinex_volume_24h'] = tick.get('volume', 0)
+
+    return max(-100, min(100, score)), details
+
+def direction(s):
+    if s >  30: return 'STRONG_BULLISH'
+    if s >  15: return 'BULLISH'
+    if s < -30: return 'STRONG_BEARISH'
+    if s < -15: return 'BEARISH'
+    return 'NEUTRAL'
+
+def action(s):
+    if s >  30: return 'BUY_BIAS'
+    if s < -30: return 'SELL_BIAS'
+    return 'NEUTRAL'
+
+# ─────────────────────────────────────────────────────────
+# MAIN
+# ─────────────────────────────────────────────────────────
+if __name__ == '__main__':
+    print("ForexSniper Liquidity Tracker v2")
+    print("=" * 50)
+
+    btc_score, btc_details = calculate('bitcoin',  'tBTCUSD')
+    eth_score, eth_details = calculate('ethereum', 'tETHUSD')
+
+    fg_now, fg_yest, fg_class = get_fear_greed()
+
+    result = {
+        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+        'fear_greed': {
+            'value':          fg_now,
+            'classification': fg_class,
+            'change_24h':     fg_now - fg_yest
+        },
+        'BTC': {
+            'liquidity_score':    btc_score,
+            'direction':          direction(btc_score),
+            'recommended_action': action(btc_score),
+            'details':            btc_details
+        },
+        'ETH': {
+            'liquidity_score':    eth_score,
+            'direction':          direction(eth_score),
+            'recommended_action': action(eth_score),
+            'details':            eth_details
+        },
+        'version': '2.0'
+    }
+
+    print(f"\nFear & Greed: {fg_now} ({fg_class})")
+    print(f"BTC: {btc_score} ({direction(btc_score)})")
+    print(f"  Price: ${btc_details.get('price', 0):,.2f}")
+    print(f"  24h:   {btc_details.get('change_24h', 0)}%")
+    print(f"ETH: {eth_score} ({direction(eth_score)})")
+    print(f"  Price: ${eth_details.get('price', 0):,.2f}")
+    print(f"  24h:   {eth_details.get('change_24h', 0)}%")
+
+    os.makedirs('docs', exist_ok=True)
+    with open('docs/liquidity_data.json', 'w') as f:
+        json.dump(result, f, indent=2)
+
+    print("\nFile written successfully")
