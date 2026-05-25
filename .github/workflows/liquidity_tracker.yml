@@ -1,0 +1,35 @@
+name: ForexSniper Liquidity Tracker
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-liquidity-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run Liquidity Tracker
+        run: python .github/scripts/liquidity_tracker.py
+
+      - name: Commit and push data
+        run: |
+          git config --global user.name "ForexSniper Bot"
+          git config --global user.email "bot@forexsniper.local"
+          git add docs/liquidity_data.json
+          git diff --staged --quiet || git commit -m "Update liquidity data"
+          git push
