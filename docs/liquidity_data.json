@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-05-27T16:56:43.933931Z",
+  "timestamp": "2026-05-27T19:14:26.774926Z",
   "fear_greed": {
     "value": 25,
     "classification": "Extreme Fear"
@@ -9,10 +9,10 @@
     "direction": "NEUTRAL",
     "recommended_action": "NEUTRAL",
     "details": {
-      "price": 75152,
-      "change_24h": -1.68,
-      "volume_24h": 36849514599.08538,
-      "market_cap": 1505576492830.6614
+      "price": 74871,
+      "change_24h": -1.17,
+      "volume_24h": 34936240138.10251,
+      "market_cap": 1500440022111.3005
     }
   },
   "ETH": {
@@ -20,10 +20,10 @@
     "direction": "NEUTRAL",
     "recommended_action": "NEUTRAL",
     "details": {
-      "price": 2066.56,
-      "change_24h": -0.51,
-      "volume_24h": 13608933187.94343,
-      "market_cap": 249387425826.95187
+      "price": 2051.36,
+      "change_24h": -0.68,
+      "volume_24h": 13055867753.518091,
+      "market_cap": 247794253804.52805
     }
   },
   "version": "2.0"
