@@ -1,29 +1,29 @@
 {
-  "timestamp": "2026-10-03T11:51:54.324671Z",
+  "timestamp": "2026-10-03T15:20:02.582621Z",
   "fear_greed": {
     "value": 67,
     "classification": "Greed"
   },
   "BTC": {
-    "liquidity_score": -12,
+    "liquidity_score": 0,
     "direction": "NEUTRAL",
     "recommended_action": "NEUTRAL",
     "details": {
-      "price": 84656,
-      "change_24h": -2.13,
-      "volume_24h": 32382872293.097286,
-      "market_cap": 1700986916165.2986
+      "price": 84833,
+      "change_24h": -0.85,
+      "volume_24h": 24042778579.225487,
+      "market_cap": 1704574698944.5415
     }
   },
   "ETH": {
-    "liquidity_score": -12,
+    "liquidity_score": 0,
     "direction": "NEUTRAL",
     "recommended_action": "NEUTRAL",
     "details": {
-      "price": 2685.1,
-      "change_24h": -2.31,
-      "volume_24h": 13869152947.497023,
-      "market_cap": 327908744627.98285
+      "price": 2680.72,
+      "change_24h": -0.88,
+      "volume_24h": 9604903541.764622,
+      "market_cap": 327333212841.78345
     }
   },
   "version": "2.0"
